@@ -17,6 +17,5 @@ programming language may be used, Python is recommended.
  - Pydantic
  - Python-dotenv
  - Requests
-
-
+ - pip install python-multipart
 
