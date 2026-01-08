@@ -116,3 +116,31 @@ async def upload_event_poster(event_id: str, file: UploadFile = File(...)):
     result = await db.event_posters.insert_one(poster_doc) 
     return {"message": "Event poster uploaded", "id": str(result.inserted_id)} 
 
+# # Attendee Endpoints
+@app.post("/attendees")
+async def create_attendee(attendee: Attendee):
+    attendee_doc = attendee.dict()
+    result = await db.attendees.insert_one(attendee_doc)
+    return {"message": "Attendee created", "id": str(result.inserted_id)}
+
+@app.get("/attendees")
+async def get_attendees():
+    attendees = await db.attendees.find().to_list(100)
+    attendees = string_ids(attendees)
+    return attendees
+
+@app.put("/attendees/{attendee_id}")
+async def update_attendee(attendee_id: str, attendee: Attendee):
+    obj_id = parse_object_id(attendee_id) 
+    result = await db.attendees.update_one({"_id": obj_id}, {"$set": attendee.dict()})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Attendee not found")
+    return {"message": "Attendee updated"}
+
+@app.delete("/attendees/{attendee_id}")
+async def delete_attendee(attendee_id: str):
+    obj_id = parse_object_id(attendee_id) 
+    result = await db.attendees.delete_one({"_id": obj_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Attendee not found")
+    return {"message": "Attendee deleted"}
