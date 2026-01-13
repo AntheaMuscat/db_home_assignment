@@ -48,8 +48,34 @@ MONGO_URI = os.getenv("MONGO_URI") # MongoDB Atlas connection string
 app = FastAPI() 
  
 # Connect to MongoDB Atlas 
+# read/write user for all operations
 client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI) 
 db = client.test # name of database under dbHomeAssignment Cluster
+
+# read-only user for read operations if needed (read/write user used in assignment for simplicity)
+# MONGO_URI_RO = os.getenv("MONGO_URI_RO")
+# ro_client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI_RO)
+# ro_db = ro_client.test
+
+#To use ro_db for read operations, replace db with ro_db in relevant endpoints
+# events = await db_ro.events.find().to_list(100)
+def clean_input(data: dict):
+    """Clean input to prevent NoSQL injection.
+    Reject nested dictionaries.
+    Reject string values containing '$' or '.' which are special in Mongo queries."""
+    for k,v in data.items():
+        if isinstance(v, dict):
+            raise HTTPException(status_code=400, detail="Nested dictionaries are not allowed")
+        if isinstance(v, str) and ('$' in v or '.' in v):
+            raise HTTPException(status_code=400, detail="Invalid characters in input")
+        
+
+def safe_update_fields(data: dict, allowed_fields: set) -> dict:
+    """Returns only the fields that are allowed to be updated.
+    Prevents NoSQL injection by deleting any fields not in allowed_fields."""
+    filtered = {k: v for k, v in data.items() if k in allowed_fields}
+    clean_input(filtered)
+    return filtered
  
 # Data Models 
 class Event(BaseModel): 
@@ -74,12 +100,19 @@ class Booking(BaseModel):
     attendee_id: str 
     ticket_type: str 
     quantity: int 
+    
+# Allowed fields for safe updates
+EVENT_ALLOWED    = {"name", "description", "date", "venue_id", "max_attendees"}
+ATTENDEE_ALLOWED = {"name", "email", "phone"}
+VENUE_ALLOWED    = {"name", "address", "capacity"}
+BOOKING_ALLOWED  = {"event_id", "attendee_id", "ticket_type", "quantity"}
  
 # Event Endpoints 
 @app.post("/events") 
 async def create_event(event: Event): 
     """Create a new event. Saved under the events collection and return the inserted ID."""
     event_doc = event.dict() 
+    clean_input(event_doc)
     result = await db.events.insert_one(event_doc) 
     return {"message": "Event created", "id": str(result.inserted_id)} 
  
@@ -97,7 +130,8 @@ async def update_event(event_id: str, event: Event):
     Helper function is called to convert the string Id back to an ObjectId making it 
     usable for MongoDB. If no event with the ID is found, 404."""
     obj_id = parse_object_id(event_id)  
-    result = await db.events.update_one({"_id": obj_id}, {"$set": event.dict()})
+    safe_data = safe_update_fields(event.dict(), EVENT_ALLOWED)
+    result = await db.events.update_one({"_id": obj_id}, {"$set": safe_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Event not found")
     return {"message": "Event updated"}
@@ -128,6 +162,7 @@ async def upload_event_poster(event_id: str, file: UploadFile = File(...)):
         "media_type": "event_poster",
         "uploaded_at": datetime.utcnow() 
     } 
+    clean_input(poster_doc)
     result = await db.multimedia_files.insert_one(poster_doc) 
     return {"message": "Event poster uploaded", "id": str(result.inserted_id)}
 
@@ -166,6 +201,7 @@ async def upload_promo_video(event_id: str, file: UploadFile = File(...)):
         "media_type": "promo_video",
         "uploaded_at": datetime.utcnow()
     }
+    clean_input(video_doc)
     result = await db.multimedia_files.insert_one(video_doc)
     return {"message": "Promotional video uploaded", "id": str(result.inserted_id)}
 
@@ -198,6 +234,7 @@ async def upload_venue_photo(venue_id: str, file: UploadFile = File(...)):
         "media_type": "venue_photo",
         "uploaded_at": datetime.utcnow()
     }
+    clean_input(photo_doc)
     result = await db.multimedia_files.insert_one(photo_doc)
     return {"message": "Venue photo uploaded", "id": str(result.inserted_id)}
 
@@ -221,6 +258,7 @@ async def download_venue_photo(photo_id: str):
 async def create_attendee(attendee: Attendee):
     """Create a new attendee. Saved under the attendees collection and return the inserted ID."""
     attendee_doc = attendee.dict()
+    clean_input(attendee_doc)
     result = await db.attendees.insert_one(attendee_doc)
     return {"message": "Attendee created", "id": str(result.inserted_id)}
 
@@ -238,7 +276,8 @@ async def update_attendee(attendee_id: str, attendee: Attendee):
         Helper function is called to convert the string Id back to an ObjectId making it
         usable for MongoDB. If no attendee with the ID is found, 404."""
     obj_id = parse_object_id(attendee_id) 
-    result = await db.attendees.update_one({"_id": obj_id}, {"$set": attendee.dict()})
+    safe_data = safe_update_fields(attendee.dict(), ATTENDEE_ALLOWED)
+    result = await db.attendees.update_one({"_id": obj_id}, {"$set": safe_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Attendee not found")
     return {"message": "Attendee updated"}
@@ -258,6 +297,7 @@ async def delete_attendee(attendee_id: str):
 async def create_venue(venue: Venue):
     """Create a new venue. Saved under the venues collection and return the inserted ID."""
     venue_doc = venue.dict()
+    clean_input(venue_doc)
     result = await db.venues.insert_one(venue_doc)
     return {"message": "Venue created", "id": str(result.inserted_id)}
 
@@ -275,7 +315,8 @@ async def update_venue(venue_id: str, venue: Venue):
      Helper function is called to convert the string Id back to an ObjectId making it
      usable for MongoDB. If no venue with the ID is found, 404."""
     obj_id = parse_object_id(venue_id) 
-    result = await db.venues.update_one({"_id": obj_id}, {"$set": venue.dict()})
+    safe_data = safe_update_fields(venue.dict(), VENUE_ALLOWED)
+    result = await db.venues.update_one({"_id": obj_id}, {"$set": safe_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Venue not found")
     return {"message": "Venue updated"}
@@ -295,6 +336,7 @@ async def delete_venue(venue_id: str):
 async def create_booking(booking: Booking):
     """Create a new booking. Saved under the bookings collection and return the inserted ID."""
     booking_doc = booking.dict()
+    clean_input(booking_doc)
     result = await db.bookings.insert_one(booking_doc)
     return {"message": "Booking created", "id": str(result.inserted_id)}
 
@@ -312,7 +354,8 @@ async def update_booking(booking_id: str, booking: Booking):
      Helper function is called to convert the string Id back to an ObjectId making it
      usable for MongoDB. If no booking with the ID is found, 404."""
     obj_id = parse_object_id(booking_id) 
-    result = await db.bookings.update_one({"_id": obj_id}, {"$set": booking.dict()})
+    safe_data = safe_update_fields(booking.dict(), BOOKING_ALLOWED)
+    result = await db.bookings.update_one({"_id": obj_id}, {"$set": safe_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Booking not found")
     return {"message": "Booking updated"}
@@ -322,7 +365,7 @@ async def delete_booking(booking_id: str):
     """Delete a booking by the booking_id inputted in the URL.
      If booking with that id doesnt exist 404."""
     obj_id = parse_object_id(booking_id) 
-    result = await db.bookings.delete_one({"_id": obj_id})
+    result = await db.bookings.delete_one({"_id": obj_id} )
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Booking not found")
     return {"message": "Booking deleted"}

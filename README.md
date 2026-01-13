@@ -43,3 +43,17 @@ Developed endpoints for file uploads and retrievals (downloads)
  - CRUD operation endpoints
  - File uploads and downloads endpoints
  All returned a 200 OK
+
+ # Task 4
+
+ ## Credentials
+ A new user with a read only role was created while not actually used in main.py credentials for the user
+ are within the .env file and code as to how to use the user is commented in main.py.
+
+ ## SQL Injections
+ Two new functions were added to clean and validate user input to prevent No SQL injections.
+ The first function rejects nested dictionaries preventing the use of $gt, $ne, $set from being injected
+ into requests. 
+ The second function restricts updates to only include the fields that are expected for each data model.
+ Any fields that are not included in the allowed arrays are ignored or rejected before sending to the
+ database, preventing malicious input from entering the database.
