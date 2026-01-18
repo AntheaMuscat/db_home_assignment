@@ -62,11 +62,11 @@ db = client.test # name of database under dbHomeAssignment Cluster
 def clean_input(data: dict):
     """Clean input to prevent NoSQL injection.
     Reject nested dictionaries.
-    Reject string values containing '$' or '.' which are special in Mongo queries."""
+    Reject string values containing '$' which is special in Mongo queries."""
     for k,v in data.items():
         if isinstance(v, dict):
             raise HTTPException(status_code=400, detail="Nested dictionaries are not allowed")
-        if isinstance(v, str) and ('$' in v or '.' in v):
+        if isinstance(v, str) and ('$' in v):
             raise HTTPException(status_code=400, detail="Invalid characters in input")
         
 
